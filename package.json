@@ -40,5 +40,8 @@
     "semver": "^7.6.2",
     "shelljs": "^0.8.5",
     "twilio-cli": "5.22.7"
+  },
+  "dependencies": {
+    "redux": "^5.0.1"
   }
 }
