@@ -23,6 +23,7 @@
       ]
     },
     "features": {
+      "test-feature": { "enabled": true },
       "activity_skill_filter": {
         "enabled": true,
         "rules": {

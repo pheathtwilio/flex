@@ -6,6 +6,7 @@ module.exports = (config, { isProd, isDev, isTest }) => {
    * Consult https://webpack.js.org/configuration for more information
    */
 
+
   for (const plugin of config.plugins) {
     // Change tsconfig for ForkTsCheckerWebpackPlugin to version which excludes test files
     if (plugin.tsconfig && plugin.options?.tsconfig) {
