@@ -1,3 +1,3 @@
 import { componentHook } from './components';
 
-export const hooks = [{ hook: componentHook }];
+export const hooks = [{ componentHook }];
