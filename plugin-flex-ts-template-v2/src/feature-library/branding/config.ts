@@ -12,6 +12,8 @@ const {
     side_nav_icon: '',
     side_nav_selected_icon: '',
     side_nav_hover_background: '',
+    panel_1: '',
+    panel_2: '',
   },
   component_theme_overrides = {},
 } = (getFeatureFlags()?.features?.branding as BrandingConfig) || {};

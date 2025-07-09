@@ -3,6 +3,7 @@ import merge from 'lodash/merge';
 
 import { FlexEvent } from '../../../../types/feature-loader';
 import { isCustomColorsEnabled, getCustomColors, getComponentThemeOverrides } from '../../config';
+// import { Panel1 } from '@twilio/flex-ui/src/components/view/AgentDesktopView/Panel1';
 
 export const eventName = FlexEvent.pluginsInitialized;
 export const eventHook = function applyBrandingColors(flex: typeof Flex, manager: Flex.Manager) {
@@ -82,6 +83,26 @@ export const eventHook = function applyBrandingColors(flex: typeof Flex, manager
         },
       };
     }
+
+    if (Boolean(colors.panel_1)) {
+      componentThemeOverrides.AgentDesktopView = {
+        ...componentThemeOverrides.AgentDesktopView,
+        Panel1: {
+          ...componentThemeOverrides.Panel1?.Container,
+          background: colors.panel_1,
+        },
+      };
+    }
+
+    if (Boolean(colors.panel_2)) {
+      componentThemeOverrides.AgentDesktopView = {
+        ...componentThemeOverrides.AgentDesktopView,
+        Panel2: {
+          ...componentThemeOverrides.Panel1?.Container,
+          background: colors.panel_2,
+        },
+      };
+    }
   }
 
   const customComponentThemeOverrides = getComponentThemeOverrides();
@@ -91,6 +112,7 @@ export const eventHook = function applyBrandingColors(flex: typeof Flex, manager
   }
 
   if (apply) {
+    console.log('componentThemeOverrides: ', componentThemeOverrides);
     manager.updateConfig({
       theme: {
         componentThemeOverrides,

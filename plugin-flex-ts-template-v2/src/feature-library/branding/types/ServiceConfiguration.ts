@@ -9,6 +9,8 @@ export default interface BrandingConfig {
     side_nav_icon: string;
     side_nav_selected_icon: string;
     side_nav_hover_background: string;
+    panel_1: string;
+    panel_2: string;
   };
   component_theme_overrides: any;
 }
