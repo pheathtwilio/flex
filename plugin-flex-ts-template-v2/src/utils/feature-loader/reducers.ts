@@ -11,7 +11,7 @@ export const init = (manager: Flex.Manager) => {
     console.error(`You need FlexUI > 1.9.0 to use built-in redux; you are currently on ${Flex.VERSION}`);
     return;
   }
-  const rootReducer = combineReducers(customReducers) as Reducer<any, AnyAction>;
+  const rootReducer = combineReducers(customReducers) as Reducer<any>;
   manager.store.addReducer(reduxNamespace, rootReducer);
 };
 
