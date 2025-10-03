@@ -12,6 +12,7 @@ import {
   DataGridCell,
 } from '@twilio-paste/core/';
 
+import { setSelection, clearSelection } from '../types/CalendarSelectionStore';
 import { CalendarEvent, EventTypes } from '../types/CalendarEvents';
 
 interface Props {
@@ -29,6 +30,15 @@ declare global {
 const CalendarPanel: React.FC<Props> = () => {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
+
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    start: Date;
+    end: Date;
+    dayIndex: number;
+    hour: number;
+  } | null>(null);
+  const [selectedEvents, setSelectedEvents] = useState<any[]>([]);
 
   let tokenClient: any;
   let tokenClientReady: Promise<void> | null = null;
@@ -166,6 +176,11 @@ const CalendarPanel: React.FC<Props> = () => {
   const handleLogout = () => {
     setIsSignedIn(false);
     setEvents([]);
+    setIsDetailsOpen(false);
+    setSelectedSlot(null);
+    setSelectedEvents([]);
+    // Clear the details panel
+    clearSelection();
   };
 
   // ---- Helpers ----
@@ -223,6 +238,7 @@ const CalendarPanel: React.FC<Props> = () => {
         pageToken,
         showDeleted: false,
       });
+      console.log(response.result.items);
       items.push(...(response.result.items || []));
       pageToken = response.result.nextPageToken || undefined;
     } while (pageToken);
@@ -277,6 +293,21 @@ const CalendarPanel: React.FC<Props> = () => {
     return { start, end };
   };
 
+  const handleCellSelect = (dayIndex: number, hour: number) => {
+    const { start, end } = getSlotRange(dayIndex, hour);
+    const cellEvents = events.filter((ev) => overlaps(start, end, ev._start, ev._end));
+    setSelection({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      dayIndex,
+      hour,
+      events: cellEvents,
+    });
+
+    // If you also have local panel open state, you can keep it; Panel2 presence is separate
+    setIsDetailsOpen(true);
+  };
+
   const ROW_HEIGHT = '64px';
   const COL_WIDTH = '72px';
 
@@ -329,7 +360,20 @@ const CalendarPanel: React.FC<Props> = () => {
                     return (
                       <DataGridCell key={`${dayIdx}-${h}`}>
                         {/* Fixed cell size */}
-                        <Box height={ROW_HEIGHT} overflow="hidden" width={COL_WIDTH}>
+                        <Box
+                          height={ROW_HEIGHT}
+                          overflow="hidden"
+                          width={COL_WIDTH}
+                          onClick={() => handleCellSelect(dayIdx, h)}
+                          onKeyDown={(e: React.KeyboardEvent) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleCellSelect(dayIdx, h);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                        >
                           {/* Vertical stack that fills the cell; each event flexes equally */}
                           <Box display="flex" flexDirection="column" height="100%">
                             {cellEvents.length > 0 ? (
