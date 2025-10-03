@@ -26,10 +26,9 @@ declare global {
   }
 }
 
-const CalendarPanel: React.FC<Props> = ({ visible, theme }) => {
+const CalendarPanel: React.FC<Props> = () => {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
-  // const [tokenClient, setTokenClient] = useState<any>(null);
 
   let tokenClient: any;
   let tokenClientReady: Promise<void> | null = null;
@@ -37,31 +36,6 @@ const CalendarPanel: React.FC<Props> = ({ visible, theme }) => {
   const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
   let gapiLoaded: Promise<void> | null = null;
-
-  // const loadScript = async (src: string): Promise<void> => {
-  //   // eslint-disable-next-line consistent-return
-  //   return new Promise((resolve, reject) => {
-  //     // already present?
-  //     const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-  //     if (existing) {
-  //       existing.addEventListener('load', () => resolve());
-  //       existing.addEventListener('error', (e) => reject(e));
-  //       // if it's already loaded, resolve immediately
-  //       if ((existing as any).readyState === 'complete') return resolve();
-  //       if (window.gapi) return resolve();
-  //       // eslint-disable-next-line consistent-return
-  //       return;
-  //     }
-
-  //     const s = document.createElement('script');
-  //     s.src = src;
-  //     s.async = true;
-  //     s.defer = true;
-  //     s.onload = () => resolve();
-  //     s.onerror = (e) => reject(e);
-  //     document.head.appendChild(s);
-  //   });
-  // };
 
   const loadScript = async (src: string): Promise<void> => {
     // eslint-disable-next-line consistent-return
@@ -155,34 +129,6 @@ const CalendarPanel: React.FC<Props> = ({ visible, theme }) => {
     };
   };
 
-  // const initTokenClient = () => {
-  //   const client = (window as any).google.accounts.oauth2.initTokenClient({
-  //     client_id: CLIENT_ID,
-  //     scope: SCOPES,
-  //     callback: (tokenResponse: any) => {
-  //       if (tokenResponse.access_token) {
-  //         setIsSignedIn(true);
-  //         listEvents(tokenResponse.access_token);
-  //       }
-  //     },
-  //   });
-  //   setTokenClient(client);
-  // };
-
-  const initTokenClient = async (onToken: (token: string) => void) => {
-    await ensureGoogleIdentity();
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPES,
-      // include_granted_scopes is on by default in GIS (grants are merged); no separate flag needed
-      callback: (resp: { access_token?: string; error?: string }) => {
-        if (resp && !resp.error && resp.access_token) {
-          onToken(resp.access_token);
-        }
-      },
-    });
-  };
-
   const trySilentLogin = async (onToken: (t: string) => void) => {
     await initGapiClient();
     await ensureTokenClient(onToken);
@@ -193,26 +139,6 @@ const CalendarPanel: React.FC<Props> = ({ visible, theme }) => {
     await ensureTokenClient(onToken);
     tokenClient!.requestAccessToken({ prompt: 'consent' });
   };
-
-  // useEffect(() => {
-  //   // Load Google's new Identity Services client
-  //   const script = document.createElement('script');
-  //   script.src = 'https://accounts.google.com/gsi/client';
-  //   script.onload = initTokenClient;
-  //   document.body.appendChild(script);
-
-  //   // Load gapi for Calendar API
-  //   const gapiScript = document.createElement('script');
-  //   gapiScript.src = 'https://apis.google.com/js/api.js';
-  //   gapiScript.onload = () => {
-  //     (window as any).gapi.load('client', async () => {
-  //       await (window as any).gapi.client.init({
-  //         discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
-  //       });
-  //     });
-  //   };
-  //   document.body.appendChild(gapiScript);
-  // }, []);
 
   useEffect(() => {
     (async () => {
@@ -326,7 +252,7 @@ const CalendarPanel: React.FC<Props> = ({ visible, theme }) => {
     return d;
   };
 
-  const getWeekBounds = (now: Date = new Date()) => {
+  const getWeekBounds = () => {
     const weekStart = getWeekStart();
     const weekend = new Date(weekStart);
     weekend.setDate(weekend.getDate() + 7);
