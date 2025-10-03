@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { withTheme, Theme } from '@twilio/flex-ui';
 import {
   Box,
-  Text,
-  Truncate,
   DataGrid,
   DataGridHead,
   DataGridHeader,
@@ -208,8 +206,6 @@ const CalendarPanel: React.FC<Props> = () => {
     return { ...e, _start: start!, _end: end! };
   };
 
-  const overlaps = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && bStart < aEnd;
-
   const ensureCalendarAPI = async (): Promise<void> => {
     await ensureGapiClient();
     // eslint-disable-next-line no-useless-return
@@ -238,7 +234,6 @@ const CalendarPanel: React.FC<Props> = () => {
         pageToken,
         showDeleted: false,
       });
-      console.log(response.result.items);
       items.push(...(response.result.items || []));
       pageToken = response.result.nextPageToken || undefined;
     } while (pageToken);
@@ -284,32 +279,155 @@ const CalendarPanel: React.FC<Props> = () => {
     });
   }, [weekStart]);
 
-  const getSlotRange = (dayIndex: number, hour: number) => {
-    const start = new Date(weekStart);
-    start.setDate(weekStart.getDate() + dayIndex);
-    start.setHours(hour, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(start.getHours() + 1);
-    return { start, end };
-  };
-
-  const handleCellSelect = (dayIndex: number, hour: number) => {
-    const { start, end } = getSlotRange(dayIndex, hour);
-    const cellEvents = events.filter((ev) => overlaps(start, end, ev._start, ev._end));
-    setSelection({
-      start: start.toISOString(),
-      end: end.toISOString(),
-      dayIndex,
-      hour,
-      events: cellEvents,
-    });
-
-    // If you also have local panel open state, you can keep it; Panel2 presence is separate
-    setIsDetailsOpen(true);
-  };
-
   const ROW_HEIGHT = '64px';
   const COL_WIDTH = '72px';
+
+  const ROW_HEIGHT_PX = 64; // numeric px value for calculations
+  const DAY_COLUMN_HEIGHT_PX = ROW_HEIGHT_PX * 24;
+
+  const [measuredDayHeight, setMeasuredDayHeight] = React.useState<number>(DAY_COLUMN_HEIGHT_PX);
+  const dayColumnRef = React.useRef<HTMLElement | null>(null);
+
+  // measure actual rendered height of a day column (useLayoutEffect for synchronous measurement)
+  React.useLayoutEffect(() => {
+    const el = dayColumnRef.current;
+    if (!el) return;
+
+    // set initial measurement
+    setMeasuredDayHeight(el.clientHeight);
+
+    // watch for resizes
+    const ro = new ResizeObserver(() => {
+      setMeasuredDayHeight(el.clientHeight);
+    });
+    ro.observe(el);
+
+    // eslint-disable-next-line consistent-return
+    return () => ro.disconnect();
+  }, []);
+
+  const computeEventPositionForDay = (ev: any, dayStart: Date) => {
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const evStart = ev._start;
+    const evEnd = ev._end;
+
+    // if no overlap with this day, return null
+    if (evEnd <= dayStart || evStart >= dayEnd) return null;
+
+    // clamp to day boundaries
+    const start = evStart < dayStart ? dayStart : evStart;
+    const end = evEnd > dayEnd ? dayEnd : evEnd;
+
+    // compute minutes-from-midnight in local time
+    const minutesFromDayStart =
+      start.getHours() * 60 + start.getMinutes() + start.getSeconds() / 60 + start.getMilliseconds() / 60000;
+
+    const endMinutes = end.getHours() * 60 + end.getMinutes() + end.getSeconds() / 60 + end.getMilliseconds() / 60000;
+
+    const durationMinutes = Math.max(1, endMinutes - minutesFromDayStart);
+
+    // IMPORTANT: use measuredDayHeight (actual DOM height) not the hard-coded constant
+    const dayHeightPx = measuredDayHeight || DAY_COLUMN_HEIGHT_PX;
+
+    const hourBlocksPx = dayHeightPx / 24;
+    const hourOfEvent = Math.floor(minutesFromDayStart / 60);
+    const minuteOfEvent = Math.floor(minutesFromDayStart % 60);
+
+    const topPx = hourOfEvent * hourBlocksPx + Math.ceil(minuteOfEvent / 60) * hourBlocksPx;
+    const heightPx = (durationMinutes / 60) * hourBlocksPx;
+
+    return { topPx, heightPx, start, end };
+  };
+
+  // --- NEW: compute layout for every day in one top-level useMemo to preserve hook order ---
+  const layoutByDay = React.useMemo(() => {
+    const result: Array<
+      {
+        ev: any;
+        pos: { topPx: number; heightPx: number; start: Date; end: Date };
+        colIndex: number;
+        colCount: number;
+      }[]
+    > = [];
+
+    for (let dayIndex = 0; dayIndex < daysIdx.length; dayIndex++) {
+      const dayStart = new Date(weekStart);
+      dayStart.setDate(weekStart.getDate() + dayIndex);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const eventsForDay = events
+        .filter((ev) => ev._end > dayStart && ev._start < dayEnd)
+        .map((ev) => {
+          const pos = computeEventPositionForDay(ev, dayStart);
+          if (!pos) return null;
+          return {
+            ev,
+            pos,
+            startTs: pos.start.getTime(),
+            endTs: pos.end.getTime(),
+            colIndex: 0,
+            colCount: 1,
+          } as any;
+        })
+        .filter(Boolean) as any[];
+
+      // sort by start then longer first
+      eventsForDay.sort((a, b) => a.startTs - b.startTs || b.endTs - a.endTs);
+
+      // greedy column placement
+      const columnsEndTs: number[] = [];
+      for (const it of eventsForDay) {
+        let placed = false;
+        for (let c = 0; c < columnsEndTs.length; c++) {
+          if (it.startTs >= columnsEndTs[c]) {
+            it.colIndex = c;
+            columnsEndTs[c] = it.endTs;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          it.colIndex = columnsEndTs.length;
+          columnsEndTs.push(it.endTs);
+        }
+      }
+
+      // compute colCount for each event (how many columns overlap it)
+      for (const it of eventsForDay) {
+        const cols = new Set<number>();
+        for (const other of eventsForDay) {
+          if (other.startTs < it.endTs && other.endTs > it.startTs) {
+            cols.add(other.colIndex);
+          }
+        }
+        it.colCount = Math.max(1, cols.size);
+      }
+
+      result[dayIndex] = eventsForDay.map((it) => ({
+        ev: it.ev,
+        pos: it.pos,
+        colIndex: it.colIndex,
+        colCount: it.colCount,
+      }));
+    }
+
+    return result;
+  }, [events, weekStart, measuredDayHeight]);
+
+  const stripeColor = 'rgba(255, 250, 250, 0.03)'; // tweak opacity to taste
+  const hourBlockPx = Math.max(1, Math.round((measuredDayHeight || DAY_COLUMN_HEIGHT_PX) / 24));
+  const stripeBg = `linear-gradient(
+    to bottom,
+    ${stripeColor} 0%,
+    ${stripeColor} 50%,
+    transparent 50%,
+    transparent 100%
+  )`;
+  const stripeBgSize = `100% ${hourBlockPx}px`;
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -342,83 +460,133 @@ const CalendarPanel: React.FC<Props> = () => {
                 ))}
               </DataGridRow>
             </DataGridHead>
+
             <DataGridBody>
-              {hours.map((h) => (
-                <DataGridRow key={h}>
-                  {/* Hour label */}
-                  <DataGridCell>
-                    <Box height={ROW_HEIGHT} display="flex" alignItems="center" width={COL_WIDTH}>
-                      {`${h.toString().padStart(2, '0')}:00`}
+              <DataGridRow>
+                {/* Left column: stacked hour labels */}
+                <Box as="td" key="hours-col" style={{ verticalAlign: 'top', padding: 0 }}>
+                  <Box
+                    style={{
+                      height: `${DAY_COLUMN_HEIGHT_PX}px`,
+                      width: COL_WIDTH,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      paddingTop: 0,
+                      margin: 0,
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {hours.map((h) => (
+                      <Box
+                        key={`hour-${h}`}
+                        style={{
+                          height: `${ROW_HEIGHT_PX}px`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          paddingLeft: '8px',
+                          boxSizing: 'border-box',
+                          fontSize: '12px',
+                          color: '#FFF',
+                        }}
+                      >
+                        {`${h.toString().padStart(2, '0')}:00`}
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+
+                {/* Day columns: one tall column per day with absolutely-positioned events */}
+                {daysIdx.map((dayIndex) => {
+                  const dayStart = new Date(weekStart);
+                  dayStart.setDate(weekStart.getDate() + dayIndex);
+                  dayStart.setHours(0, 0, 0, 0);
+
+                  // read precomputed layout for this day
+                  const layoutedEvents = layoutByDay[dayIndex] || [];
+
+                  return (
+                    <Box as="td" key={`daycol-${dayIndex}`} style={{ verticalAlign: 'top', padding: 0 }}>
+                      <Box
+                        ref={dayIndex === 0 ? (el) => (dayColumnRef.current = el) : undefined}
+                        // the tall container for entire day (24 * ROW_HEIGHT_PX)
+                        style={{
+                          position: 'relative',
+                          height: `${DAY_COLUMN_HEIGHT_PX}px`,
+                          width: '100%',
+                          overflow: 'hidden',
+                        }}
+                        onClick={() => {
+                          setSelectedSlot(null);
+                        }}
+                      >
+                        {/* Render each event as absolute box positioned using computeEventPositionForDay */}
+                        {layoutedEvents.map((item) => {
+                          const { ev, pos, colIndex, colCount } = item;
+
+                          // Horizontal spacing: small gap in px
+                          const GAP_PX = 6;
+                          const widthPercent = 100 / colCount;
+                          const leftPercent = colIndex * widthPercent;
+
+                          const style: React.CSSProperties = {
+                            position: 'absolute',
+                            top: `${pos.topPx}px`,
+                            height: `${Math.max(12, pos.heightPx)}px`,
+                            left: `${leftPercent}%`,
+                            width: `calc(${widthPercent}% - ${GAP_PX}px)`,
+                            marginLeft: `${GAP_PX / 2}px`,
+                            marginRight: `${GAP_PX / 2}px`,
+                            boxSizing: 'border-box',
+                            padding: '4px 6px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(0,0,0,0.08)',
+                            backgroundColor: ev.creator?.self ? 'rgba(214, 31, 31, .6)' : 'rgba(255, 231, 71, .6)',
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            zIndex: 2 + colIndex,
+                          };
+
+                          const isAllDay = Boolean(ev.start?.date) && !ev.start?.dateTime;
+
+                          return (
+                            <div
+                              key={ev.id}
+                              style={style}
+                              title={isAllDay ? `${ev.summary} — All-day` : `${ev.summary}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEvents([ev]);
+                                setIsDetailsOpen(true);
+                                setSelection({
+                                  start: pos.start.toISOString(),
+                                  end: pos.end.toISOString(),
+                                  dayIndex,
+                                  hour: pos.start.getHours(),
+                                  events: [ev],
+                                });
+                              }}
+                            >
+                              <div
+                                style={{
+                                  whiteSpace: 'nowrap',
+                                  textOverflow: 'ellipsis',
+                                  overflow: 'hidden',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {ev.summary ?? '(No title)'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </Box>
                     </Box>
-                  </DataGridCell>
-                  {/* Cells for each day */}
-                  {daysIdx.map((dayIdx) => {
-                    const { start: slotStart, end: slotEnd } = getSlotRange(dayIdx, h);
-
-                    const cellEvents = events.filter((ev) => overlaps(slotStart, slotEnd, ev._start, ev._end));
-
-                    return (
-                      <DataGridCell key={`${dayIdx}-${h}`}>
-                        {/* Fixed cell size */}
-                        <Box
-                          height={ROW_HEIGHT}
-                          overflow="hidden"
-                          width={COL_WIDTH}
-                          onClick={() => handleCellSelect(dayIdx, h)}
-                          onKeyDown={(e: React.KeyboardEvent) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              handleCellSelect(dayIdx, h);
-                            }
-                          }}
-                          role="button"
-                          tabIndex={0}
-                        >
-                          {/* Vertical stack that fills the cell; each event flexes equally */}
-                          <Box display="flex" flexDirection="column" height="100%">
-                            {cellEvents.length > 0 ? (
-                              cellEvents.map((ev) => {
-                                const isAllDay = Boolean(ev.start?.date) && !ev.start?.dateTime;
-                                return (
-                                  <Box
-                                    key={ev.id}
-                                    flex="1 1 0"
-                                    display="flex"
-                                    alignItems="center"
-                                    justifyContent="center"
-                                    padding="space20"
-                                    borderWidth="borderWidth10"
-                                    borderStyle="solid"
-                                    borderColor="colorBorderWeak"
-                                    borderRadius="borderRadius20"
-                                    backgroundColor="colorBackground"
-                                    overflow="hidden"
-                                    title={
-                                      isAllDay
-                                        ? `${ev.summary ?? '(No title)'} — All-day`
-                                        : `${ev.summary ?? '(No title)'}`
-                                    }
-                                  >
-                                    {/* Single-line, truncated label so it doesn't overflow */}
-                                    <Truncate title={ev.summary ?? '(No title)'}>
-                                      <Text as="span" fontSize="fontSize20" fontWeight="fontWeightSemibold">
-                                        {ev.summary ?? '(No title)'}
-                                      </Text>
-                                    </Truncate>
-                                  </Box>
-                                );
-                              })
-                            ) : (
-                              // Keep an empty flex filler so all rows stay the same height
-                              <Box flex="1 1 0" />
-                            )}
-                          </Box>
-                        </Box>
-                      </DataGridCell>
-                    );
-                  })}
-                </DataGridRow>
-              ))}
+                  );
+                })}
+              </DataGridRow>
             </DataGridBody>
           </DataGrid>
         </div>
