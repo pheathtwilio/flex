@@ -23,7 +23,9 @@
       ]
     },
     "features": {
-      "test-feature": { "enabled": true },
+      "test-feature": {
+        "enabled": true
+      },
       "activity_skill_filter": {
         "enabled": true,
         "rules": {
@@ -429,6 +431,15 @@
         "exclude_queues": []
       },
       "test_feature": {
+        "enabled": false
+      },
+      "demo_ui_decorator": {
+        "enabled": false
+      },
+      "demo_video_component": {
+        "enabled": false
+      },
+      "demo_calendar_component": {
         "enabled": false
       }
     }
