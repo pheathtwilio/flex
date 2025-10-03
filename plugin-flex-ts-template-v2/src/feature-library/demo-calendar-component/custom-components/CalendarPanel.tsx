@@ -377,15 +377,6 @@ const CalendarPanel: React.FC<Props> = () => {
               ))}
             </DataGridBody>
           </DataGrid>
-          {/* <ul>
-              {events.map((event) => (
-                <li key={event.id}>
-                  <strong>{event.summary}</strong> <br />
-                  {event.start?.dateTime || event.start?.date} → {event.end?.dateTime || event.end?.date}
-                </li>
-              ))}
-            </ul> */}
-          {/* </div> */}
         </div>
       )}
     </div>
